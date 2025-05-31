@@ -1,0 +1,884 @@
+----// Problem 1:
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+minimise  140x1 + 105x2 + 155x3 + 20x4
+    
+subject to:
+        x1, x2, x3, x4 ≥ 0
+        40x1 + 40x2 + 100x3 + 80x4 ≥ 46
+        50x1 + 70x2 + 90x3 + 80x4 ≥ 0 (No limit)
+        68x1 + 63x2 + 60x3 +11x4 ≥ 60
+        
+        40x1 + 40x2 + 100x3 + 80x4 ≤ 100 (No limit)
+        50x1 + 70x2 + 90x3 + 80x4 ≤ 84 (No limit)
+        68x1 + 63x2 + 60x3 + 11x4 ≤ 100 (No limit)
+
+Data read from Excel file with the table:
+	I1	I2	I3	I4	Atleast %	Atmost %
+Protein(%)	40	40	100	80	46	100
+Fat(%)	50	70	90	80	0	84
+Fibre(%)	68	63	60	11	60	100
+Cost(£)	140	105	155	20		
+
+"""
+from pyomo.environ import *
+import numpy as np
+import pandas as pd
+
+file_name='Group28_IB94Z0.xlsx'
+df = pd.read_excel(file_name,'Problem1',index_col=0)
+
+nutrition_type = df.loc[df.index[0:-1], df.columns[0]].keys() # Protein, Fat and Fibre
+ingredients = df.loc[df.index[0], df.columns[:-2]].keys() # I1, I2, I3 and I4
+
+df_np = df.to_numpy()
+
+cost_matrix = df_np[-1,0:-2] # Cost for each ingredient
+atleast_matrix = df_np[0:-1:,-2] 
+atmost_matrix = df_np[0:-1,-1] # % cannot be more than 100 for any nutrition
+ingredient_allowance = df_np[0:-1,0:-2] # nutrition % in each ingredient
+
+numofingredients = len(ingredients)
+numofnutrition = len(nutrition_type) 
+
+model = ConcreteModel()
+model.TL = Var(range(numofingredients),domain = NonNegativeReals)
+
+# Objective function: minimize the total cost of ingredients
+def objective_rule(model):
+    return sum(model.TL[i] * cost_matrix[i] for i in range(numofingredients))
+model.cost = Objective(rule=objective_rule, sense=minimize)
+
+# At least rule: ensure minimum nutritional requirements are met
+def atleast_rule(model,i):
+    return sum(model.TL[k] * ingredient_allowance[i,k]  for k in range(numofingredients)) >= atleast_matrix[i]
+model.atleast = Constraint(range(numofnutrition), rule = atleast_rule)
+
+# At most rule: ensure maximum nutritional limits are not exceeded
+def atmost_rule(model,i):
+    return sum(model.TL[k] * ingredient_allowance[i,k] for k in range(numofingredients)) <= atmost_matrix[i]
+model.atmost = Constraint(range(numofnutrition), rule = atmost_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model,tee = False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('The minimum cost of the feed is £', round(model.cost(),2))
+else:
+    print("Solve failed.")
+
+_____
+
+----// Problem 2:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+maximise  490x + 315y
+    
+subject to:
+        x,y ≥ 0
+		35x + 15y ≤ 1800
+        15x + 45y ≤ 800
+		25x + 20y ≤ 1000 
+		x,y ≥ 0  
+        
+Data read from Excel file with the table:
+	high_grade	low_grade	available	cost
+wool	35	15	1800	4
+nylon	15	45	800	3
+work_hours	25	20	1000	7
+selling_price	850	650		
+			
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name = 'Group28_IB94Z0.xlsx'
+df = pd.read_excel(file_name,'Problem2', index_col=0)
+df_np = df.to_numpy()
+
+material_type = df.loc[df.index[0],df.columns[0:-2]].keys() # Material types
+wool = df_np[0,0:2] # Wool data
+nylon = df_np[1,0:2] # Nylon data
+work_hours = df_np[2,0:2] # Work hours required
+availability = df_np[0:-1,0:-2] # Availability of resources
+selling_price = df_np[3,0:2] # Selling price of each material type
+cost = df_np[0:3,3] # Costs for wool, nylon, and labor
+available = df_np[0:3,2] # Available resources
+
+model = ConcreteModel()
+model.TL = Var(range(len(material_type)), domain = NonNegativeReals)
+        
+# Defining profit/income = selling price - (cost of wool *quantity of wool + cost of nylon*quantity of nylon + cost of labour*quantity of labour )
+profit = [0,0]
+for i in range(len(profit)):
+  for j in range(len(profit)-1):
+    profit[i]=selling_price[i]-(wool[i]*cost[j]+ nylon[i]*cost[j+1] + work_hours[i]*cost[j+2])
+
+# Objective function: maximize total profit 
+def obj (model):
+  return sum(model.TL[i] * (profit[i]) for i in range(len(material_type)))
+model.profit = Objective(rule=obj, sense=maximize)
+
+# Limit rule: ensure resource usage does not exceed availability
+def limit_rule(model, i):
+  return sum(model.TL[j] * availability[i,j] for j in range(len(material_type))) <= available[i]
+model.cons = Constraint(range(len(available)), rule=limit_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+   print("Total Income or Profit:",model.profit())
+   for i in range(len(material_type)):
+     print("Material Type:",material_type[i], "Optimal Quantity:", model.TL[i].value)
+else:
+    print("Solve failed.")
+____
+
+----// Problem 3:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+LP model:
+maximise 10x1 + 31x2 + 14.5x3
+    
+subject to:
+    x1, x2, x3 >= 0
+    x1 + x2 + x3 <= 85000
+    x1 <= 55000
+    x2 <= 45000
+    x3 <= 40000
+    10x1 + 19x2 + 1.5x3 <= 705000
+
+Data read from Excel file with the table:
+	Fresh goods	Frozen goods	Other goods	Total
+Max space(square meters)	55000	45000	40000	85000
+Storage cost(£)	10	19	1.5	705000
+Profit(£)	20	50	16	0
+
+"""
+
+from pyomo.environ import * 
+import pandas as pd
+import numpy as np
+
+file_name = 'Group28_IB94Z0.xlsx'
+df = pd.read_excel(file_name, "Problem3", index_col=0) 
+
+goods = df.loc[df.index[0], df.columns[0:-1]].keys()  
+df_np = df.to_numpy()
+
+total_matrix = df_np [0:-1,-1]
+total_space = total_matrix[0]
+total_cost = total_matrix[-1]
+
+max_space = df_np[0,0:-1] 
+cost = df_np[1,:-1] 
+profit = df_np[-1,:-1]   
+
+n_goods = len(goods)
+
+model = ConcreteModel()
+model.goods = Var(range(n_goods), domain=NonNegativeReals)
+
+# Objective: maximize Net Profit
+def net_profit_rule(model):
+    return sum(model.goods[i] * (profit[i]-cost[i]) for i in range(n_goods))
+model.profit = Objective(rule=net_profit_rule, sense=maximize)
+
+# Capacity constraint: The total amount of goods cannot exceed maximum capacity
+def total_space_rule(model):
+    return sum(model.goods[i] for i in range(n_goods)) <= total_space
+model.space = Constraint (rule=total_space_rule)
+
+# Cost constraint: The total cost of goods cannot exceed maximum cost
+def cost_rule(model):
+    return sum(model.goods[i] * cost[i] for i in range(n_goods)) <= total_cost
+model.cost = Constraint (rule=cost_rule)
+
+# Maximum space constraint: Each good allocated space should not exceed its maximum space
+def max_space_rule(model,i):
+    return model.goods[i] <= max_space[i]
+model.supply = Constraint(range(n_goods), rule=max_space_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee=False)
+    
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('Maximal profit:', round(model.profit(), 2))
+    opt_sol3 = np.zeros(n_goods)
+    for i in range(n_goods):
+        opt_sol3[i] = model.goods[i].value  # Correct this line
+        print('Optimal space for', goods[i], 'is', round(opt_sol3[i],2))  # Access the allocated amounts
+else:
+    print("Solve failed.")
+____
+
+----// Problem 4:
+
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+minimize  0.4x1 + 0.9x2 + 0.2x3 + 1.7x4
+    
+subject to:
+        x1+x2+x3+x4 ≥ 998
+		0.4(x1+x2+x3+x4) ≤ x3
+        0.2(x1+x2+x3+x4) ≤ x4
+        x1 ≤ 500
+		x2 ≤ 500
+		x3 ≤ 400
+        x4 ≤ 300 
+        x2 - x1 * 4 ≤ 0
+		x1,x2,x3,x4 ≥ 0  
+        
+Data read from Excel file with the table:
+Ingredient      Supply	     Cost      Minimum mixture      
+Oats            500          0.4       0
+Corn            500          0.9       0
+Soybean         400          0.2       40%
+Vitamin         300          1.7       20% 
+
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name  = 'Group28_IB94Z0.xlsx'
+df4 = pd.read_excel(file_name, "Problem4", index_col = 0)
+df4_2 = pd.read_excel(file_name, "Problem4-2", index_col = 0)
+df4_np = df4.to_numpy()
+df4_2_np = df4_2.to_numpy()
+
+ing_names = df4.loc[df4.index[:],df4.columns[0]].keys()
+ings = len(ing_names)
+
+supply = df4_np[:,0] # the supply of each ingredients
+cost = df4_np[:,1] # the cost of each ingredients
+ratio = df4_np[:,2] # the minimum ratio of each ingredients
+
+minimum = df4_2_np[0,0] # the minimum weight of the mix
+corn_oat_ratio = df4_2_np[1,0] # ratio of corn to oat
+
+model = ConcreteModel()
+model.x = Var(range(ings), domain = NonNegativeReals)
+
+# Objective function: minimize the total cost of ingredients in the mixture
+def objective_rule (model): 
+    return sum (cost[i]*model.x[i] for i in range (ings))
+model.cost = Objective(rule=objective_rule, sense = minimize)
+
+# Supply constraint: ensure the amount used does not exceed available supply
+def supply_rule (model, i): 
+    return (model.x[i]) <= supply[i]
+model.supply = Constraint(range(ings), rule = supply_rule)
+
+# Minimum ratio constraint: enforce that actual usage meets the minimum ratio requirements
+def mixture_rule (model, i):
+    return (model.x[i]) >= ratio[i] * sum(model.x[j] for j in range (ings))
+model.mixture = Constraint(range(ings), rule = mixture_rule)
+
+# Minimum mixture weight constraint: total amount must meet or exceed minimum weight
+model.minimum_cons = Constraint (expr=sum(model.x[i] for i in range (ings)) >= minimum) 
+# Ratio constraint: ensure the ratio of corn to oat is maintained
+model.ratio_cons = Constraint(expr= model.x[1]-corn_oat_ratio*model.x[0] <= 0) 
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee=False)
+
+opt_sol = np.zeros(ings)
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('Minimum cost:',round(model.cost(),2))
+    for i in range (ings):
+        opt_sol[i] = model.x[i]()
+        print ("Optimal mix for ", ing_names[i], "is ", model.x[i]())
+
+else:
+    print("Solve failed.")    
+
+____
+
+----// Problem 5:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+minimise  8(y1+y2+y3+y4) + 10z1 + 8z2 + 12z3 + 15z4 
+    
+subject to:
+		x1, x2, x3, x4, y1, y2, y3, y4, z1, z2, z3, z4 ≥ 0
+        x1, x2, x3, x4 ≤ 1167
+        y1 = x1 -584 + z1
+        y2 = x2 + y1 – 1000 + z2
+        y3 = x3 + y2 – 1350 + z3
+        y4 = x4 + y3 – 1150 + z4
+
+Data read from Excel file with the table:
+Quarter	  1	  2	3	4
+Demand	584	1000	1350	1150
+Hoding Cost(£)	8	8	8	8
+Penalty Cost(£)	10	8	12	15
+Capacity	1167	1167	1167	1167
+
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name  = 'Group28_IB94Z0.xlsx'
+df5 = pd.read_excel(file_name, "Problem5", index_col=0)
+df5_np = df5.to_numpy()
+
+quarter = df5.loc[df5.index[0], df5.columns[:]].keys()
+num_quarters = len(quarter)
+
+demand = df5_np[0,:]
+hold_cost = df5_np[1,:]
+penalty = df5_np[2,:]
+capacity = df5_np[3,:]
+
+model = ConcreteModel()
+
+model.production = Var(range(num_quarters), domain=NonNegativeReals) # Production quantity for each quarter (x)
+model.inventory = Var(range(num_quarters), domain=NonNegativeReals)  # Inventory at the end of each quarter (y)
+model.understock = Var(range(num_quarters), domain=NonNegativeReals)  # Understock amount for each quarter (z)
+
+# Objective function: minimize total holding cost and penalty costs
+def objective_rule(model):
+    holding_cost = sum(model.inventory[i] * hold_cost[i] for i in range(num_quarters))
+    penalty_cost = sum(model.understock[i] * penalty[i] for i in range(num_quarters))
+    return holding_cost + penalty_cost
+model.obj = Objective(rule=objective_rule, sense=minimize)
+
+# Capacity rule: ensure production does not exceed capacity for each quarter
+def cap_mass_rule(model, i):
+    return model.production[i] <= capacity[i]  
+model.cap_mass = Constraint(range(num_quarters), rule=cap_mass_rule)
+
+# Inventory balance and unsatisfied demand constraints
+def inventory_rule(model, i):
+    if i == 0:  
+        return model.inventory[i] == model.production[i] - demand[i] + model.understock[i]  # No previous inventory
+    else:
+        return model.inventory[i] == model.inventory[i-1] + model.production[i] - demand[i] + model.understock[i] # Consider previous inventory and add understock
+model.inventory_constraints = Constraint(range(num_quarters), rule=inventory_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee=False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('Minimum cost:', round(model.obj(),2))
+    opt_sol5 = np.zeros(num_quarters)
+    for i in range(num_quarters):
+        opt_sol5[i] = model.production[i]()
+        print('Optimal production for quarter', quarter[i], 'is', model.production[i]()) 
+else:
+    print("Solve failed.")
+____
+
+----// Problem 6:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+minimise  8x1 + 7x2 + 7x3 + 9x4 + 6x5 + 8x6 + 0.5 (y1+y2+y3+y4+y5+y6) 
+    
+subject to:
+		x1, x2, x3, x4, x5, d6, y1, y2, y3, y4, y5, y6 ≥ 0
+        x1 ≥ 2900
+        x2 + y1 ≥ 2400
+        x3 + y2 ≥ 2300
+        x4 + y3 ≥ 2800
+        x5 + y4 ≥ 2800
+        x6 + y5 ≥ 2300
+        y1 = x1 -2900
+        y2 = x2 + y1 -2400
+        y3 = x3 + y2 – 2300
+        y4 = x4 + y3 -2800
+        y5 = x5 + y4 -2800
+        y6 = x6 + y5 - 2300
+ 
+Data read from Excel file with the table:
+Month	1	2	3	4	5	6
+Demand	2900	2400	2300	2800	2800	2300
+Production Cost(£)	8	7	7	9	6	8
+Storage Cost(£)	0.5	0.5	0.5	0.5	0.5	0.5
+
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name  = 'Group28_IB94Z0.xlsx'
+df6 = pd.read_excel(file_name, "Problem6", index_col = 0)
+df6_np = df6.to_numpy()
+
+month= df6.loc[df6.index[0],df6.columns[:]].keys()
+num_months = len(month)
+
+demand = df6_np[0,:]
+prod_cost = df6_np[1,:]
+stor_cost = df6_np[2,:]
+
+model = ConcreteModel()
+
+model.production = Var(range(num_months), domain=NonNegativeReals)  # Production quantity (x)
+model.inventory = Var(range(num_months), domain=NonNegativeReals)  # Inventory at the end of the month (y)
+
+# Objective function: minimize total cost (production + storage)
+def objective_rule(model):
+    production_cost = sum(model.production[i] * prod_cost[i] for i in range(num_months))
+    storage_cost = sum(model.inventory[i] * stor_cost[i] for i in range(num_months))
+    return production_cost + storage_cost
+model.cost = Objective(rule=objective_rule, sense=minimize)
+
+# Demand constraints: ensure demand is met for each month
+def demand_rule(model, i):
+    if i ==0:
+        return model.production[i] >= demand[i]  # No previous inventory
+    else:
+        return model.production[i] + model.inventory[i-1] >= demand[i] # Consider previous inventory
+model.demand = Constraint(range(num_months), rule=demand_rule)
+
+# Inventory constraints: manage inventory balance
+def inventory_rule(model, i):
+    if i == 0:  
+        return model.inventory[i] == model.production[i] - demand[i]  # No previous inventory
+    else:
+        return model.inventory[i] == model.inventory[i - 1] + model.production[i] - demand[i] # Update inventory
+model.inventory_constraints = Constraint(range(num_months), rule=inventory_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee=False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('Minimum cost:', round(model.cost(),2))
+    opt_sol6 = np.zeros(num_months)
+    for i in range(num_months):
+        opt_sol6[i] = model.production[i]()
+        print('Optimal production for month', month[i], 'is', model.production[i]()) 
+else:
+    print("Solve failed.")
+
+____
+
+----// Problem 7:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+maximise 0.05A+0.08B+0.07C+0.06D+0.11E 
+    
+subject to:
+		A+B+C+D+E ≤ 110000
+        A+C+D ≥ 26000
+		A+C ≤ 32000
+		B+D+E ≤ B+E
+        5A+7C+6D ≥ 10 (5A+8B+7C+6D+11E) 
+		A,B,C,D,E ≥ 0  
+        
+Data read from Excel file with the table:
+Bond      A	     B      C        D         E       
+Yield     0.05   0.08   0.07     0.06      0.11          
+Maturity  Short  Long   Short    Short     Long
+Risk	  High	 Low	High     Low       Low
+Tax-Free  Yes	 No	    Yes      Yes       No
+
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name  = 'Group28_IB94Z0.xlsx'
+df7 = pd.read_excel(file_name, "Problem7", index_col = 0)
+df7_np = df7.to_numpy()
+
+bonds= df7.loc[df7.index[0],df7.columns[:-1]].keys()
+bondsnum = len(bonds)
+
+yields = df7_np[0,:-1] # yields of each bonds
+maturity = df7_np[1,:-1] # types of maturity of each bonds
+risk = df7_np[2,:-1] # risk types of each bonds
+tax = df7_np[3,:-1] # tax types of each bonds
+
+capacity = df7_np[0,-1] # the capacity of the investment
+max_highrisk = df7_np[2,-1] # the maximum investment for high risk bonds
+taxfreeratio = df7_np[3,-1] # the minimum tax-free ratio for the investment
+short_maturity = df7_np[1,-1] # the minimum short maturity investment
+
+model = ConcreteModel()
+model.x = Var(range(bondsnum), domain = NonNegativeReals)
+
+# Objective function: maximize total interest from investments in bonds
+def objective_rule (model): #the interest function
+    return sum (yields[i]*model.x[i] for i in range (bondsnum))
+model.interest_1 = Objective(rule=objective_rule, sense = maximize)
+
+def capacity_rule (model): # capacity constraint
+    return sum (model.x[i] for i in range (bondsnum)) <= capacity
+model.capacity = Constraint(rule = capacity_rule)
+
+def risk_rule (model): # maximum high risk bonds constraint
+    return sum (model.x[i] for i in range (bondsnum) if risk[i] == "High") <= max_highrisk
+model.risk = Constraint (rule=risk_rule)
+
+def riskmaturity_rule (model): # long maturity investments has to be lower than low risk investments
+    return sum (model.x[i] for i in range (bondsnum) if risk[i]=="Low") - sum(model.x [j] for j in range (bondsnum) if maturity[j]=="Long") <=0  
+model.riskmaturity = Constraint (rule = riskmaturity_rule)
+
+def taxfreeratio_rule (model): # minimum tax free ratio constraint
+    return sum (model.x[i]*yields[i] for i in range (bondsnum) if tax[i]=="Yes") >= sum(model.x[j]*yields[j] for j in range (bondsnum))*taxfreeratio
+model.taxfreeratio = Constraint (rule=taxfreeratio_rule)
+
+def maturity_rule (model): # minimum short maturity investment
+    return sum(model.x[i] for i in range (bondsnum) if maturity[i] == "Short") >= short_maturity
+model.maturity = Constraint (rule= maturity_rule)
+
+# Solving the model & printing results
+solver7 = SolverFactory('glpk')
+results = solver7.solve(model, tee=False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('Maximum interest:',round(model.interest_1(),2))
+    opt_sol7 = np.zeros(bondsnum)
+    for i in range (bondsnum):
+        opt_sol7[i] = model.x[i]()
+        print('Optimal investment for bonds', bonds[i], 'is ', model.x[i]())
+else:
+    print("Solve failed.")   
+____
+
+----// Problem 8:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+i (plant) = 1,2,3
+j (customer) = 1,2,3,4
+LP model:
+maximise 45*x11 + 35*x12 + 35*x12 + 45*x14 + 40*x21 + 30*x22 + 20*x23 + 35*x24 + 50*x31 + 50*x32 + 30*x33 + 30*x34
+    
+subject to:
+    x11,x12,x13,x14,x21,x22,x23,x24,x31,x32,x33,x34 ≥ 0
+    x11 + x12 + x13 + x14 ≤ 2400
+    x21 + x22 + x23 + x24 ≤ 3800
+    x31 + x32 + x33 + x34 ≤ 5500
+    x11 + x21 + x31 = 3100
+    x12 + x22 + x32 = 4650
+    x13 + x32 + x33 ≥ 990
+    x14 + x24 + x34 ≥ 0 
+        
+Data read from Excel file with the table:
+from	Customer 1	Customer 2	Customer 3	Customer 4	Supply
+Plant 1	45	35	35	45	2400
+Plant 2	40	30	20	35	3800
+Plant 3	50	50	30	30	5500
+Demand	3100	4650	990	0	0
+
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name = 'Group28_IB94Z0.xlsx'
+df = pd.read_excel(file_name, "Problem8", index_col=0) 
+
+plants_names = df.loc[df.index[:-1], df.columns[0]].keys()
+customers_names = df.columns[:-1]
+
+df_np = df.to_numpy()
+
+matrix = df_np[0:-1,0:-1] 
+supplies = df_np[0:-1, -1]      
+demands = df_np[-1, 0:-1]       
+
+plants = len(plants_names)  
+customers = len(customers_names)  
+
+model = ConcreteModel()
+model.PC = Var(range(plants), range(customers), domain=NonNegativeReals)
+
+# Objective function: maximise profit 
+def objective_rule(model):
+    return sum(matrix[i, j] * model.PC[i, j] for i in range(plants) for j in range(customers))
+model.profit = Objective(rule=objective_rule, sense=maximize)
+
+# Supply constraint
+def supply_rule(model, i):
+    return sum(model.PC[i, j] for j in range(customers)) <= supplies[i]
+model.supply = Constraint(range(plants), rule=supply_rule)
+
+# Demand constraint
+def demand_rule(model, j):
+    if j < 2:
+        return sum(model.PC[i, j] for i in range(plants)) == demands[j]
+    else:
+        return sum(model.PC[i, j] for i in range(plants)) >= demands[j]
+model.demand = Constraint(range(customers), rule=demand_rule)
+
+# Solving the model and printing results 
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee=False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print("Optimal Transportation Plan is:")
+    for i in range(plants):
+        for j in range(customers):        
+            print(model.PC[i, j].value, "units transported from", plants_names[i], "to", customers_names[j])
+
+    print('Maximal profit:', model.profit())
+  
+else:
+    print("Solve failed.")
+
+
+____
+
+----// Problem 9:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+LP Model:
+𝑚in𝑖𝑚𝑖s𝑒  
+45x1 + 55y1 + 12z1 + 45x2 + 70y2 + 12z2 + 75x3 + 100y3 + 12z3
+    
+subject to:
+        Demand Constraints:
+        x1 + y1 - z1 = 110
+        x2 + y2 + z1 - z2 = 155
+        x3 + y3 + z2 - z3 = 160
+        Capacity Constraints:
+        x1 ≤ 85
+        y1 ≤ 115 
+        x2 ≤ 130
+        y2 ≤ 145
+        x3 ≤ 130
+        y3 ≤ 25
+        
+        x1,x2,x3,y1,y2,y3,z1,z2,z3 ≥ 0
+        
+Data read from Excel file with the table 1:
+Month	Regular(Capacity)	Overtime(Capacity)	Demand
+1	85	115	110
+2	130	145	155
+3	130	25	160
+
+Data read from Excel file with the table 2:
+    Month	Regular(Cost)	Overtime(Cost)	Inventory Holding Cost
+1	45	55	12
+2	45	70	12
+3	75	100	12
+	
+"""
+
+from pyomo.environ import *
+import pandas as pd
+import numpy as np
+
+file_name='Group28_IB94Z0.xlsx'
+df = pd.read_excel(file_name,'Problem9', index_col=0)
+df_np = df.to_numpy()
+
+cost_type = df.loc[df.index[0],df.columns[5:]].keys() # Cost types from the DataFrame
+month = df_np[0:3,4] # Month data
+capacity_regular = df_np[0:3,0] # Regular capacity for each month
+capacity_overtime = df_np[0:3,1] # Overtime capacity for each month
+demand = df_np[0:3,2] # Demand for each month
+cost_regular = df_np[0:3,5] # Regular costs
+cost_overtime = df_np[0:3,6] # Overtime costs
+inventory_holding_cost = df_np[0:3,7] # Inventory holding costs
+
+no_of_months = len(month)
+
+model = ConcreteModel()
+model.x = Var(range(no_of_months), domain=NonNegativeReals) # Regular
+model.y = Var(range(no_of_months), domain=NonNegativeReals) # Overtime
+model.z = Var(range(no_of_months), domain=NonNegativeReals) # Inventory
+
+# Objective function: minimize the total cost, including regular costs, overtime costs, and inventory holding costs
+def objective_rule(model):
+    return sum(cost_regular[i]*model.x[i] + cost_overtime[i]*model.y[i] + inventory_holding_cost[i]*model.z[i] for i in range(no_of_months))
+model.cost = Objective(rule=objective_rule, sense=minimize)
+
+# Regular capacity constraint: ensure regular production does not exceed available capacity each month
+def capacity_rule_regular(model, i):
+    return model.x[i] <= capacity_regular[i]
+model.capacity_regular = Constraint(range(no_of_months), rule=capacity_rule_regular)
+
+# Overtime capacity constraint: ensure overtime production does not exceed available capacity each month
+def capacity_rule_overtime(model, i):
+    return model.y[i] <= capacity_overtime[i]
+model.capacity_overtime = Constraint(range(no_of_months), rule=capacity_rule_overtime)
+
+# Demand constraint: ensure that production meets demand for each month, accounting for inventory levels
+def demand_rule(model, i):
+  if i == 0:
+    return model.x[i] + model.y[i] - model.z[i] == demand[i]
+  else:
+    return model.x[i] + model.y[i] + model.z[i-1] - model.z[i] == demand[i]
+model.demand = Constraint(range(no_of_months), rule=demand_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    opt_sol7 = np.zeros(len(month))
+    for i in range (len(month)):
+      opt_sol7[i] = model.x[i]()
+      print('Optimal regular production in month', i+1, 'is ', model.x[i]())
+      print('Optimal overtime production in month', i+1, 'is ', model.y[i]())
+      print('Optimal inventory in month', i+1, 'is ', model.z[i]())
+    print('Minimum Cost is', model.cost())
+
+else:
+    print("Solve failed.") 
+
+____
+
+----// Problem 10:
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+i = Plan Types (A,B,C)
+j=  Years (1,2,3,4)
+LP Model:
+maximise  
+    (0.053*x[0,0] + 0.053*x[0,1] + 0.053*x[0,2] + 0.053*x[0,3]) - Investing in A, earning 5.3% int annually for 4 years
+ + (0.1599*x[1,0] + 0.1599*x[1,1] + 0.1599*x[1,2]) - Investing in B for Y1-3, earning 5.3% int after every 2 years [CANT INV IN Y4 AS INT WOULD COME IN Y6]
+ + (0.3315*x[2,0]) - Investing in C in Y1 only, earning 33.15 int after 4 years
+    
+subject to:
+    0(Y1) : x[0,0] + x[1,0] + x[2,0] <= 6500.0
+    1(Y2) : x[0,1] + x[1,1] - 1.053*x[0,0] <= 6500.0 
+    2(Y3) : x[0,2] + x[1,2] - (1.053*x[0,1] + 1.1599*x[1,0]) <= 6500.0 
+    3(Y4) : x[0,3] - (1.053*x[0,2] + 1.1599*x[1,1]) <= 6500.0 
+
+    x[2,0] <= 3250.0 (Investment made in C(Y1) cannot be more than 3250)
+    
+context:
+    Current investment <= budget + amount received from matured investment 
+    implying,
+    Current investment - amount received from matured investment  <= budget 
+    1.053*x[0,0] <- Interst + principal amount earned from A in Y1 reinvested in Y2
+    1.053*x[0,1] <- Interst + principal amount earned from A in Y2 reinvested in Y3
+    1.053*x[0,2] <- Interst + principal amount earned from A in Y3 reinvested in Y4
+    1.1599*x[1,0] <- Interst + principal amount earned from B in Y1 reinvested in Y3
+    1.1599*x[1,1] <- Interst + principal amount earned from B in Y2 reinvested in Y4
+
+Data read from Excel file with the table 1:
+Inv	Yield	limit
+A	5.30%	0
+B	15.99%	0
+C	33.15%	3250
+
+Data read from Excel file with the table 2:
+Year	Fund
+Y1	6500
+Y2	6500
+Y3	6500
+Y4	6500
+
+"""
+
+from pyomo.environ import *
+import numpy as np
+import pandas as pd
+
+file_name='Group28_IB94Z0.xlsx'
+df1 = pd.read_excel(file_name,'Problem10-1',index_col=0)
+df2 = pd.read_excel(file_name,'Problem10-2',index_col=0)
+
+
+plan_type = df1.loc[df1.index[:], df1.columns[0]].keys() # A, B and C
+inv_year = df2.loc[df2.index[:], df2.columns[0]].keys() # Y1, Y2, Y3 and Y4
+
+numplans = len(plan_type)
+numyears = len(inv_year)
+
+df1_np = df1.to_numpy()
+df2_np = df2.to_numpy()
+
+interest_matrix = df1_np[:,0] # Interest rates for plans A, B, and C
+yearbudget = df2_np[:,0] # Annual budget for each of the four years (constant 6500)
+limit_matrix = df1_np[:,-1] # Constraints on investments in plan C (<= 3250)
+
+model = ConcreteModel()
+model.x = Var(range(numplans),range(numyears), domain=NonNegativeReals)
+
+# Objective rule: maximize total interest earned from investments
+def MaxInt_rule(model):
+    result = 0
+    for i in range(numplans):
+        if i <= 1:
+            result += sum(model.x[i, j] * interest_matrix[i] for j in range(numyears-i))
+        else:
+            result += sum(model.x[i, j] * interest_matrix[i] for j in range(numyears - i-1))
+    return result 
+model.int = Objective(rule=MaxInt_rule, sense=maximize)
+
+# Budget constraint: ensure investments do not exceed the annual budget        
+def budget_rule(model, k):
+         if k == 0: # No int on investments
+             return sum(model.x[l, k] for l in range(numplans)) <= yearbudget[k]
+         if k == 1: # No investment from now onwards in C
+             return (
+             sum(model.x[l, k] for l in range(numplans - 1)) 
+             - sum(model.x[l, k-1] * (1 + interest_matrix[l]) for l in range(numplans-2))
+             <= yearbudget[k]
+         )
+         if 2 <= k < range(numyears)[-1]: # Investment in only A and B till n-1 years
+             return (
+             sum(model.x[l, k] for l in range(numplans - 1)) 
+             - sum(model.x[l, k-l-1] * (1 + interest_matrix[l]) for l in range(numplans-1))
+             <= yearbudget[k])
+         else: # No investment shall be made in B as well in last year
+             return (
+             sum(model.x[l, k] for l in range(numplans - 2)) 
+             - sum(model.x[l, k-l-1] * (1 + interest_matrix[l]) for l in range(numplans-1))
+             <= yearbudget[k]
+             
+         )  
+model.budget = Constraint(range(numyears), rule=budget_rule)
+
+# Limit constraint: ensure total investment in plan C does not exceed certain limits
+def plan3_rule(model,p):
+    return sum(model.x[2, q] for q in range(numyears-3)) <= limit_matrix[-1]
+model.limit = Constraint(range(numyears-3),rule = plan3_rule)
+
+# Solving the model & printing results
+solver = SolverFactory('glpk')
+results = solver.solve(model, tee = False)
+
+if results.solver.termination_condition == TerminationCondition.optimal:
+    print('The maximunm interest Ann can earn by 5th year is £', round(model.int(),2))    
+else:
+    print("Solve failed.")
+    
+
+
